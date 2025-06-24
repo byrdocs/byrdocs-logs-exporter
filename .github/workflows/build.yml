@@ -1,0 +1,24 @@
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-unknown-linux-musl]
+    steps:
+      - uses: actions/checkout@master
+      - name: Compile and release
+        uses: YouXam/rust-build.action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          RUSTTARGET: ${{ matrix.target }}
+          EXTRA_FILES: "README.md LICENSE"
