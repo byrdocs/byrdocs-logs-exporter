@@ -22,8 +22,8 @@ struct Cli {
 enum Commands {
     /// Import logs for a specific date
     Import {
-        /// Date in YYYY-MM-DD format
-        date: String,
+        /// Date in YYYY-MM-DD format (defaults to yesterday if not provided)
+        date: Option<String>,
         /// Force reimport even if already imported
         #[arg(long)]
         force: bool,
@@ -400,8 +400,6 @@ async fn insert_records(pool: &PgPool, table_name: &str, records: &[Value]) -> R
     Ok(())
 }
 
-
-
 async fn ensure_import_table_exists(pool: &PgPool) -> Result<()> {
     sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS _import (
@@ -536,13 +534,22 @@ async fn import_logs_for_date(config: &Config, date: &str, force: bool) -> Resul
     Ok(())
 }
 
-async fn run_import(date: String, force: bool) -> Result<()> {
+async fn run_import(date: Option<String>, force: bool) -> Result<()> {
     let config = Config::from_env()?;
     
-    NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+    // Use yesterday's date if no date is provided
+    let actual_date = date.unwrap_or_else(|| {
+        let yesterday = (Utc::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        info!("No date provided, using yesterday's date: {}", yesterday);
+        yesterday
+    });
+    
+    NaiveDate::parse_from_str(&actual_date, "%Y-%m-%d")
         .context("Invalid date format. Use YYYY-MM-DD")?;
 
-    import_logs_for_date(&config, &date, force).await
+    import_logs_for_date(&config, &actual_date, force).await
 }
 
 async fn run_watch() -> Result<()> {
