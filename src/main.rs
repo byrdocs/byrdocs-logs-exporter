@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client as S3Client, Config as S3Config};
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use clap::{Parser, Subcommand};
 use flate2::read::GzDecoder;
 use serde_json::Value;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::{error, info};
@@ -147,6 +147,51 @@ async fn download_and_decompress_logs(s3_client: &S3Client, bucket: &str, date: 
     Ok(decompressed_data)
 }
 
+async fn get_table_columns(pool: &PgPool, table_name: &str) -> Result<HashSet<String>> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = $1"
+    )
+    .bind(table_name)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get table columns")?;
+    
+    Ok(rows.into_iter().collect())
+}
+
+async fn get_json_fields(records: &[Value]) -> HashSet<String> {
+    let mut all_fields = HashSet::new();
+    
+    for record in records {
+        if let Value::Object(obj) = record {
+            for key in obj.keys() {
+                all_fields.insert(key.clone());
+            }
+        }
+    }
+    
+    all_fields
+}
+
+fn infer_column_type(key: &str, value: &Value) -> &'static str {
+    if key == "timestamp" {
+        "TIMESTAMP WITH TIME ZONE"
+    } else {
+        match value {
+            Value::String(_) => "TEXT",
+            Value::Number(n) => {
+                if n.is_f64() {
+                    "DOUBLE PRECISION"
+                } else {
+                    "BIGINT"
+                }
+            }
+            Value::Bool(_) => "BOOLEAN",
+            _ => "JSONB",
+        }
+    }
+}
+
 async fn ensure_table_exists(pool: &PgPool, table_name: &str, sample_record: &Value) -> Result<()> {
     let table_exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)"
@@ -163,22 +208,7 @@ async fn ensure_table_exists(pool: &PgPool, table_name: &str, sample_record: &Va
         
         if let Value::Object(obj) = sample_record {
             for (key, value) in obj {
-                let column_type = if key == "timestamp" {
-                    "TIMESTAMP WITH TIME ZONE"
-                } else {
-                    match value {
-                        Value::String(_) => "TEXT",
-                        Value::Number(n) => {
-                            if n.is_f64() {
-                                "DOUBLE PRECISION"
-                            } else {
-                                "BIGINT"
-                            }
-                        }
-                        Value::Bool(_) => "BOOLEAN",
-                        _ => "JSONB",
-                    }
-                };
+                let column_type = infer_column_type(key, value);
                 columns.push(format!("{} {}", key, column_type));
             }
         }
@@ -202,6 +232,53 @@ async fn ensure_table_exists(pool: &PgPool, table_name: &str, sample_record: &Va
     Ok(())
 }
 
+async fn ensure_columns_exist(pool: &PgPool, table_name: &str, records: &[Value]) -> Result<()> {
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    // Step 1: Get existing table columns (set A), filtering out special columns
+    let existing_columns = get_table_columns(pool, table_name).await?;
+    let mut filtered_existing_columns = existing_columns.clone();
+    filtered_existing_columns.remove("imported_at"); // Remove special column
+    
+    // Step 2: Get all fields from JSON data (set B)
+    let json_fields = get_json_fields(records).await;
+    
+    // Step 3: Check if B - A is not empty (new fields exist)
+    let new_fields: HashSet<_> = json_fields.difference(&existing_columns).collect();
+    
+    if !new_fields.is_empty() {
+        info!("Detected {} new fields in data source: {:?}", new_fields.len(), new_fields);
+        
+        // Add new columns using ALTER TABLE
+        for field in &new_fields {
+            // Find a sample value to infer the column type
+            let mut sample_value = &Value::Null;
+            for record in records {
+                if let Value::Object(obj) = record {
+                    if let Some(value) = obj.get(*field) {
+                        sample_value = value;
+                        break;
+                    }
+                }
+            }
+            
+            let column_type = infer_column_type(field, sample_value);
+            let alter_sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, field, column_type);
+            
+            sqlx::query(&alter_sql)
+                .execute(pool)
+                .await
+                .context(format!("Failed to add column {}", field))?;
+                
+            info!("Added new column: {} {}", field, column_type);
+        }
+    }
+    
+    Ok(())
+}
+
 async fn insert_records(pool: &PgPool, table_name: &str, records: &[Value]) -> Result<()> {
     if records.is_empty() {
         return Ok(());
@@ -209,35 +286,40 @@ async fn insert_records(pool: &PgPool, table_name: &str, records: &[Value]) -> R
 
     let sample_record = &records[0];
     ensure_table_exists(pool, table_name, sample_record).await?;
+    
+    // Ensure all columns exist before inserting
+    ensure_columns_exist(pool, table_name, records).await?;
 
-    // Get column names from the first record
-    let columns: Vec<String> = if let Value::Object(obj) = sample_record {
-        obj.keys().cloned().collect()
-    } else {
-        return Ok(());
-    };
+    // Get all existing table columns (including newly added ones)
+    let existing_columns = get_table_columns(pool, table_name).await?;
+    let mut columns: Vec<String> = existing_columns.into_iter()
+        .filter(|col| col != "imported_at") // Exclude imported_at as it has DEFAULT value
+        .collect();
+    columns.sort(); // Sort for consistent ordering
 
     let batch_size = 100; // Insert in batches of 100 records
     let mut tx = pool.begin().await.context("Failed to begin transaction")?;
 
     for batch in records.chunks(batch_size) {
         let mut values_clauses = Vec::new();
-        let mut bind_values = Vec::new();
-        let mut param_index = 1;
+        let mut all_bind_values = Vec::new();
 
         for record in batch {
             if let Value::Object(obj) = record {
-                let mut record_placeholders = Vec::new();
+                let mut record_bind_values = Vec::new();
                 
+                // Use named insertion: for each column, get value from JSON or use NULL
                 for column in &columns {
-                    record_placeholders.push(format!("${}", param_index));
-                    param_index += 1;
-                    
                     let value = obj.get(column).unwrap_or(&Value::Null);
-                    bind_values.push(value);
+                    record_bind_values.push(value);
                 }
                 
-                values_clauses.push(format!("({})", record_placeholders.join(", ")));
+                let placeholders: Vec<String> = (1..=columns.len())
+                    .map(|i| format!("${}", all_bind_values.len() + i))
+                    .collect();
+                
+                values_clauses.push(format!("({})", placeholders.join(", ")));
+                all_bind_values.extend(record_bind_values);
             }
         }
 
@@ -251,16 +333,34 @@ async fn insert_records(pool: &PgPool, table_name: &str, records: &[Value]) -> R
 
             let mut query = sqlx::query(&insert_sql);
             
-            for (i, value) in bind_values.iter().enumerate() {
+            for (i, value) in all_bind_values.iter().enumerate() {
                 let column_name = &columns[i % columns.len()];
                 
                 if column_name == "timestamp" && matches!(value, Value::String(_)) {
-                    // Parse timestamp and convert to UTC timezone
+                    // Parse timestamp and convert to proper DateTime<Utc>
                     if let Value::String(timestamp_str) = value {
-                        let timestamp_with_tz = format!("{} UTC", timestamp_str);
-                        query = query.bind(timestamp_with_tz);
+                        // Try to parse the timestamp string as a NaiveDateTime first
+                        match NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
+                            Ok(naive_dt) => {
+                                let dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+                                query = query.bind(dt_utc);
+                            }
+                            Err(_) => {
+                                // If parsing fails, try alternative formats or bind as None
+                                match DateTime::parse_from_rfc3339(timestamp_str) {
+                                    Ok(dt) => {
+                                        let dt_utc = dt.with_timezone(&Utc);
+                                        query = query.bind(dt_utc);
+                                    }
+                                    Err(_) => {
+                                        info!("Failed to parse timestamp: {}, binding as None", timestamp_str);
+                                        query = query.bind(Option::<DateTime<Utc>>::None);
+                                    }
+                                }
+                            }
+                        }
                     } else {
-                        query = query.bind(Option::<String>::None);
+                        query = query.bind(Option::<DateTime<Utc>>::None);
                     }
                 } else {
                     match value {
@@ -299,6 +399,8 @@ async fn insert_records(pool: &PgPool, table_name: &str, records: &[Value]) -> R
 
     Ok(())
 }
+
+
 
 async fn ensure_import_table_exists(pool: &PgPool) -> Result<()> {
     sqlx::query(r#"
@@ -351,14 +453,19 @@ async fn record_import(pool: &PgPool, date: &str, dataset: &str, records_count: 
 }
 
 async fn delete_existing_records(pool: &PgPool, table_name: &str, date: &str) -> Result<i64> {
-    let start_time = format!("{} 00:00:00", date);
-    let end_time = format!("{} 23:59:59", date);
+    let start_time = NaiveDateTime::parse_from_str(&format!("{} 00:00:00", date), "%Y-%m-%d %H:%M:%S")
+        .context("Failed to parse start date")?;
+    let end_time = NaiveDateTime::parse_from_str(&format!("{} 23:59:59", date), "%Y-%m-%d %H:%M:%S")
+        .context("Failed to parse end date")?;
+    
+    let start_dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(start_time, Utc);
+    let end_dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(end_time, Utc);
     
     let result = sqlx::query(
         &format!("DELETE FROM {} WHERE timestamp >= $1 AND timestamp <= $2", table_name)
     )
-    .bind(&start_time)
-    .bind(&end_time)
+    .bind(start_dt_utc)
+    .bind(end_dt_utc)
     .execute(pool)
     .await
     .context("Failed to delete existing records")?;
@@ -391,7 +498,7 @@ async fn import_logs_for_date(config: &Config, date: &str, force: bool) -> Resul
             let dataset = obj
                 .get("dataset")
                 .and_then(|v| v.as_str())
-                .unwrap_or("default")
+                .unwrap_or("unknown")
                 .to_string();
 
             records_by_dataset
