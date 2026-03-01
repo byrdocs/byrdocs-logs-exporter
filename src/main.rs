@@ -40,11 +40,11 @@ struct Config {
     r2_secret_access_key: String,
     r2_endpoint: String,
     r2_analytics_bucket: String,
-    grafana_db_host: String,
-    grafana_db_port: u16,
-    grafana_db_username: String,
-    grafana_db_password: String,
-    grafana_db_database: String,
+    logs_db_host: String,
+    logs_db_port: u16,
+    logs_db_username: String,
+    logs_db_password: String,
+    logs_db_database: String,
 }
 
 impl Config {
@@ -62,18 +62,18 @@ impl Config {
             ),
             r2_analytics_bucket: std::env::var("R2_ANALYTICS_BUCKET")
                 .context("R2_ANALYTICS_BUCKET environment variable not found")?,
-            grafana_db_host: std::env::var("GRAFANA_DB_HOST")
-                .context("GRAFANA_DB_HOST environment variable not found")?,
-            grafana_db_port: std::env::var("GRAFANA_DB_PORT")
-                .context("GRAFANA_DB_PORT environment variable not found")?
+            logs_db_host: std::env::var("LOGS_DB_HOST")
+                .context("LOGS_DB_HOST environment variable not found")?,
+            logs_db_port: std::env::var("LOGS_DB_PORT")
+                .context("LOGS_DB_PORT environment variable not found")?
                 .parse()
-                .context("Invalid GRAFANA_DB_PORT")?,
-            grafana_db_username: std::env::var("GRAFANA_DB_USERNAME")
-                .context("GRAFANA_DB_USERNAME environment variable not found")?,
-            grafana_db_password: std::env::var("GRAFANA_DB_PASSWORD")
-                .context("GRAFANA_DB_PASSWORD environment variable not found")?,
-            grafana_db_database: std::env::var("GRAFANA_DB_DATABASE")
-                .context("GRAFANA_DB_DATABASE environment variable not found")?,
+                .context("Invalid LOGS_DB_PORT")?,
+            logs_db_username: std::env::var("LOGS_DB_USERNAME")
+                .context("LOGS_DB_USERNAME environment variable not found")?,
+            logs_db_password: std::env::var("LOGS_DB_PASSWORD")
+                .context("LOGS_DB_PASSWORD environment variable not found")?,
+            logs_db_database: std::env::var("LOGS_DB_DATABASE")
+                .context("LOGS_DB_DATABASE environment variable not found")?,
         })
     }
 }
@@ -106,7 +106,7 @@ async fn create_s3_client(config: &Config) -> Result<S3Client> {
 async fn create_db_pool(config: &Config) -> Result<PgPool> {
     let database_url = format!(
         "postgresql://{}:{}@{}:{}/{}",
-        config.grafana_db_username, config.grafana_db_password, config.grafana_db_host, config.grafana_db_port, config.grafana_db_database
+        config.logs_db_username, config.logs_db_password, config.logs_db_host, config.logs_db_port, config.logs_db_database
     );
 
     PgPool::connect(&database_url)
