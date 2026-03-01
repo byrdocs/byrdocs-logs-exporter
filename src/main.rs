@@ -36,15 +36,15 @@ enum Commands {
 
 #[derive(Debug, Clone)]
 struct Config {
-    r2_access_id: String,
-    r2_access_secret: String,
+    r2_access_key_id: String,
+    r2_secret_access_key: String,
     r2_endpoint: String,
-    r2_bucket: String,
-    db_host: String,
-    db_port: u16,
-    db_username: String,
-    db_password: String,
-    db_database: String,
+    r2_analytics_bucket: String,
+    grafana_db_host: String,
+    grafana_db_port: u16,
+    grafana_db_username: String,
+    grafana_db_password: String,
+    grafana_db_database: String,
 }
 
 impl Config {
@@ -52,26 +52,28 @@ impl Config {
         dotenvy::dotenv().ok();
         
         Ok(Config {
-            r2_access_id: std::env::var("R2_ACCESS_ID")
-                .context("R2_ACCESS_ID environment variable not found")?,
-            r2_access_secret: std::env::var("R2_ACCESS_SECRET")
-                .context("R2_ACCESS_SECRET environment variable not found")?,
-            r2_endpoint: std::env::var("R2_ENDPOINT")
-                .context("R2_ENDPOINT environment variable not found")?,
-            r2_bucket: std::env::var("R2_BUCKET")
-                .context("R2_BUCKET environment variable not found")?,
-            db_host: std::env::var("DB_HOST")
-                .context("DB_HOST environment variable not found")?,
-            db_port: std::env::var("DB_PORT")
-                .context("DB_PORT environment variable not found")?
+            r2_access_key_id: std::env::var("R2_ACCESS_KEY_ID")
+                .context("R2_ACCESS_KEY_ID environment variable not found")?,
+            r2_secret_access_key: std::env::var("R2_SECRET_ACCESS_KEY")
+                .context("R2_SECRET_ACCESS_KEY environment variable not found")?,
+            r2_endpoint: format!("https://{}.r2.cloudflarestorage.com",
+                 std::env::var("R2_ACCOUNT_ID")
+                    .context("R2_ACCOUNT_ID environment variable not found")?,
+            ),
+            r2_analytics_bucket: std::env::var("R2_ANALYTICS_BUCKET")
+                .context("R2_ANALYTICS_BUCKET environment variable not found")?,
+            grafana_db_host: std::env::var("GRAFANA_DB_HOST")
+                .context("GRAFANA_DB_HOST environment variable not found")?,
+            grafana_db_port: std::env::var("GRAFANA_DB_PORT")
+                .context("GRAFANA_DB_PORT environment variable not found")?
                 .parse()
-                .context("Invalid DB_PORT")?,
-            db_username: std::env::var("DB_USERNAME")
-                .context("DB_USERNAME environment variable not found")?,
-            db_password: std::env::var("DB_PASSWORD")
-                .context("DB_PASSWORD environment variable not found")?,
-            db_database: std::env::var("DB_DATABASE")
-                .context("DB_DATABASE environment variable not found")?,
+                .context("Invalid GRAFANA_DB_PORT")?,
+            grafana_db_username: std::env::var("GRAFANA_DB_USERNAME")
+                .context("GRAFANA_DB_USERNAME environment variable not found")?,
+            grafana_db_password: std::env::var("GRAFANA_DB_PASSWORD")
+                .context("GRAFANA_DB_PASSWORD environment variable not found")?,
+            grafana_db_database: std::env::var("GRAFANA_DB_DATABASE")
+                .context("GRAFANA_DB_DATABASE environment variable not found")?,
         })
     }
 }
@@ -79,11 +81,11 @@ impl Config {
 async fn create_s3_client(config: &Config) -> Result<S3Client> {
     info!("Creating S3 client");
     info!("  Endpoint: {}", config.r2_endpoint);
-    info!("  Access ID: {}...", &config.r2_access_id[..config.r2_access_id.len().min(8)]);
+    info!("  Access ID: {}...", &config.r2_access_key_id[..config.r2_access_key_id.len().min(8)]);
     
     let credentials = Credentials::new(
-        &config.r2_access_id,
-        &config.r2_access_secret,
+        &config.r2_access_key_id,
+        &config.r2_secret_access_key,
         None,
         None,
         "static",
@@ -104,7 +106,7 @@ async fn create_s3_client(config: &Config) -> Result<S3Client> {
 async fn create_db_pool(config: &Config) -> Result<PgPool> {
     let database_url = format!(
         "postgresql://{}:{}@{}:{}/{}",
-        config.db_username, config.db_password, config.db_host, config.db_port, config.db_database
+        config.grafana_db_username, config.grafana_db_password, config.grafana_db_host, config.grafana_db_port, config.grafana_db_database
     );
 
     PgPool::connect(&database_url)
@@ -479,7 +481,7 @@ async fn import_logs_for_date(config: &Config, date: &str, force: bool) -> Resul
     
     ensure_import_table_exists(&pool).await?;
 
-    let decompressed_data = download_and_decompress_logs(&s3_client, &config.r2_bucket, date).await?;
+    let decompressed_data = download_and_decompress_logs(&s3_client, &config.r2_analytics_bucket, date).await?;
     
     let json_str = String::from_utf8(decompressed_data)
         .context("Failed to convert decompressed data to UTF-8")?;
@@ -592,11 +594,11 @@ async fn run_list() -> Result<()> {
     let config = Config::from_env()?;
     let s3_client = create_s3_client(&config).await?;
     
-    info!("Listing files in bucket: {}", config.r2_bucket);
+    info!("Listing files in bucket: {}", config.r2_analytics_bucket);
     
     let response = s3_client
         .list_objects_v2()
-        .bucket(&config.r2_bucket)
+        .bucket(&config.r2_analytics_bucket)
         .send()
         .await
         .context("Failed to list objects in R2 bucket")?;
