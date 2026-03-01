@@ -1,0 +1,31 @@
+on:
+  schedule:
+    - cron: '0 1 * * *'
+permissions:
+  contents: read
+jobs:
+  build-and-update:
+    name: Daily Update
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ANALYTICS_BUCKET: ${{ secrets.R2_ANALYTICS_BUCKET }}
+      GRAFANA_DB_HOST: ${{ secrets.GRAFANA_DB_HOST }}
+      GRAFANA_DB_PORT: ${{ secrets.GRAFANA_DB_PORT }}
+      GRAFANA_DB_USERNAME: ${{ secrets.GRAFANA_DB_USERNAME }}
+      GRAFANA_DB_PASSWORD: ${{ secrets.GRAFANA_DB_PASSWORD }}
+      GRAFANA_DB_DATABASE: ${{ secrets.GRAFANA_DB_DATABASE }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Set up Cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Run byrdocs-logs-exporter
+        run: cargo r -r import "$(date -d 'yesterday' +'%Y-%m-%d')"
