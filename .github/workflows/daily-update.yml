@@ -32,8 +32,8 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ANALYTICS_BUCKET: ${{ secrets.R2_ANALYTICS_BUCKET }}
-          GRAFANA_DB_HOST: ${{ secrets.GRAFANA_DB_HOST }}
-          GRAFANA_DB_PORT: ${{ secrets.GRAFANA_DB_PORT }}
-          GRAFANA_DB_USERNAME: ${{ secrets.GRAFANA_DB_USERNAME }}
-          GRAFANA_DB_PASSWORD: ${{ secrets.GRAFANA_DB_PASSWORD }}
-          GRAFANA_DB_DATABASE: ${{ secrets.GRAFANA_DB_DATABASE }}
+          LOGS_DB_HOST: ${{ secrets.LOGS_DB_HOST }}
+          LOGS_DB_PORT: ${{ secrets.LOGS_DB_PORT }}
+          LOGS_DB_USERNAME: ${{ secrets.LOGS_DB_USERNAME }}
+          LOGS_DB_PASSWORD: ${{ secrets.LOGS_DB_PASSWORD }}
+          LOGS_DB_DATABASE: ${{ secrets.LOGS_DB_DATABASE }}
