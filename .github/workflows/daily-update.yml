@@ -25,6 +25,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+      - name: Get IPv6 Address
+        id: ip
+        uses: candidob/get-runner-ip@v1.0.0
       - id: check
         name: Check byrdocs-logs-exporter release
         uses: pozetroninc/github-action-get-latest-release@master
