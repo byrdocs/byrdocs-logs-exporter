@@ -20,6 +20,7 @@ jobs:
         with:
           owner: byrdocs
           repo: byrdocs-logs-exporter
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Get byrdocs-logs-exporter binary
         run: |
           wget https://github.com/byrdocs/byrdocs-logs-exporter/releases/download/${{ steps.check.outputs.release }}/byrdocs-logs-exporter_${{ steps.check.outputs.release }}_x86_64-unknown-linux-musl.zip
@@ -37,3 +38,10 @@ jobs:
           LOGS_DB_USERNAME: ${{ secrets.LOGS_DB_USERNAME }}
           LOGS_DB_PASSWORD: ${{ secrets.LOGS_DB_PASSWORD }}
           LOGS_DB_DATABASE: ${{ secrets.LOGS_DB_DATABASE }}
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 30
+        with:
+          sudo: false
+          limit-access-to-actor: true
