@@ -12,6 +12,16 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ANALYTICS_BUCKET: ${{ secrets.R2_ANALYTICS_BUCKET }}
+      LOGS_DB_HOST: ${{ secrets.LOGS_DB_HOST }}
+      LOGS_DB_PORT: ${{ secrets.LOGS_DB_PORT }}
+      LOGS_DB_USERNAME: ${{ secrets.LOGS_DB_USERNAME }}
+      LOGS_DB_PASSWORD: ${{ secrets.LOGS_DB_PASSWORD }}
+      LOGS_DB_DATABASE: ${{ secrets.LOGS_DB_DATABASE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -29,16 +39,6 @@ jobs:
           chmod 777 byrdocs-logs-exporter
       - name: Run byrdocs-logs-exporter
         run: ./byrdocs-logs-exporter import "$(date -d 'yesterday' +'%Y-%m-%d')"
-        env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ANALYTICS_BUCKET: ${{ secrets.R2_ANALYTICS_BUCKET }}
-          LOGS_DB_HOST: ${{ secrets.LOGS_DB_HOST }}
-          LOGS_DB_PORT: ${{ secrets.LOGS_DB_PORT }}
-          LOGS_DB_USERNAME: ${{ secrets.LOGS_DB_USERNAME }}
-          LOGS_DB_PASSWORD: ${{ secrets.LOGS_DB_PASSWORD }}
-          LOGS_DB_DATABASE: ${{ secrets.LOGS_DB_DATABASE }}
       - name: Setup tmate session
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3
