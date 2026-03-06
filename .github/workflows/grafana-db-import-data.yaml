@@ -18,14 +18,19 @@ jobs:
             exit 1
           fi
 
-          response="$(curl --fail-with-body --silent --show-error \
+          response_with_status="$(curl --silent --show-error \
+            --write-out "\n%{http_code}" \
             "https://byrdocs-logs-exporter.cpphusky.workers.dev/import" \
             -H "authorization: Bearer ${EXPORTER_SITE_TOKEN}")"
 
-          echo "Response: ${response}"
+          http_status="${response_with_status##*$'\n'}"
+          response="${response_with_status%$'\n'*}"
 
-          ok="$(printf '%s' "${response}" | jq -er '.ok')"
-          if [ "${ok}" != "true" ]; then
-            echo "Expected response field .ok=true, got .ok=${ok}"
+          echo "HTTP status: ${http_status}"
+          echo "Response: ${response:-<empty>}"
+
+          ok="$(printf '%s' "${response}" | jq -r '.ok // false' 2>/dev/null || printf 'false')"
+          if [ "${http_status}" -lt 200 ] || [ "${http_status}" -ge 300 ] || [ "${ok}" != "true" ]; then
+            echo "Import failed (status=${http_status}, ok=${ok})"
             exit 1
           fi
