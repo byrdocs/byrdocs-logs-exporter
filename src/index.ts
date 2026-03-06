@@ -4,6 +4,7 @@ const BATCH_SIZE = 100;
 const MAX_LIST_PAGES = 10;
 const DEFAULT_IMPORT_TIMEOUT_MS = 120_000;
 const DIAG_TIMEOUT_MS = 15_000;
+const DEFAULT_GITHUB_WORKFLOW_REF = "main";
 const IMPORT_TABLE = "_import";
 const IMPORTED_AT_COLUMN = "imported_at";
 const TIMESTAMP_COLUMN = "timestamp";
@@ -12,8 +13,12 @@ const PLAIN_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 interface Env {
   ANALYTICS_BUCKET: R2Bucket;
-  API_TOKEN?: string;
+  EXPORTER_SITE_TOKEN?: string;
   IMPORT_TIMEOUT_MS?: string;
+  GITHUB_REPOSITORY?: string;
+  GITHUB_WORKFLOW_DISPATCH_TOKEN?: string;
+  GITHUB_WORKFLOW_ID?: string;
+  GITHUB_WORKFLOW_REF?: string;
   LOGS_DB_URL?: string;
   LOGS_DB_SSLMODE?: string;
   LOGS_DB_HOST?: string;
@@ -184,12 +189,15 @@ export default {
     const requestId = `cron-${date}`;
 
     ctx.waitUntil(
-      importLogsForDate(env, date, false, requestId)
+      dispatchGithubWorkflow(env, requestId)
         .then((result) => {
-          console.log(`[${requestId}] Scheduled import completed: ${JSON.stringify(result)}`);
+          console.log(
+            `[${requestId}] Scheduled workflow dispatch completed: ${JSON.stringify(result)}`
+          );
         })
         .catch((error) => {
-          console.error(`[${requestId}] Scheduled import failed:`, error);
+          console.error(`[${requestId}] Scheduled workflow dispatch failed:`, error);
+          throw error;
         })
     );
   }
@@ -227,7 +235,7 @@ function assertMethod(request: Request, allowedMethods: string[]): void {
 }
 
 function assertAuthorized(request: Request, env: Env): void {
-  const expectedToken = env.API_TOKEN;
+  const expectedToken = env.EXPORTER_SITE_TOKEN;
   if (!expectedToken) {
     return;
   }
@@ -282,6 +290,70 @@ function createRequestId(): string {
   } catch {
     return Math.random().toString(16).slice(2, 10);
   }
+}
+
+function parseGithubRepository(repository: string): { owner: string; repo: string } {
+  const trimmed = repository.trim();
+  const segments = trimmed.split("/").filter((segment) => segment.length > 0);
+  if (segments.length !== 2) {
+    throw new Error("GITHUB_REPOSITORY must use the format owner/repo");
+  }
+
+  return {
+    owner: segments[0],
+    repo: segments[1]
+  };
+}
+
+function resolveGithubWorkflowRef(ref: string | undefined): string {
+  const trimmed = ref?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_GITHUB_WORKFLOW_REF;
+}
+
+async function dispatchGithubWorkflow(
+  env: Env,
+  requestId: string
+): Promise<{ repository: string; workflow: string; ref: string; status: number }> {
+  const repository = requireEnvValue(env.GITHUB_REPOSITORY, "GITHUB_REPOSITORY");
+  const workflowId = requireEnvValue(env.GITHUB_WORKFLOW_ID, "GITHUB_WORKFLOW_ID");
+  const workflowToken = requireEnvValue(
+    env.GITHUB_WORKFLOW_DISPATCH_TOKEN,
+    "GITHUB_WORKFLOW_DISPATCH_TOKEN"
+  );
+  const ref = resolveGithubWorkflowRef(env.GITHUB_WORKFLOW_REF);
+  const { owner, repo } = parseGithubRepository(repository);
+
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowId)}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${workflowToken}`,
+        "content-type": "application/json",
+        "user-agent": "byrdocs-logs-exporter"
+      },
+      body: JSON.stringify({ ref })
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `GitHub workflow dispatch failed (${response.status} ${response.statusText}): ${errorBody || "<empty response>"}`
+    );
+  }
+
+  console.log(
+    `[${requestId}] Dispatched GitHub workflow '${workflowId}' for ${repository}@${ref}`
+  );
+
+  return {
+    repository,
+    workflow: workflowId,
+    ref,
+    status: response.status
+  };
 }
 
 function parsePositiveInt(value: string, fieldName: string): number {
