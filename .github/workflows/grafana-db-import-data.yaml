@@ -1,0 +1,31 @@
+name: Grafana DB Import Data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call import endpoint
+        env:
+          EXPORTER_SITE_TOKEN: ${{ secrets.EXPORTER_SITE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EXPORTER_SITE_TOKEN}" ]; then
+            echo "Missing required secret: EXPORTER_SITE_TOKEN"
+            exit 1
+          fi
+
+          response="$(curl --fail-with-body --silent --show-error \
+            "https://byrdocs-logs-exporter.cpphusky.workers.dev/import" \
+            -H "authorization: Bearer ${EXPORTER_SITE_TOKEN}")"
+
+          echo "Response: ${response}"
+
+          ok="$(printf '%s' "${response}" | jq -er '.ok')"
+          if [ "${ok}" != "true" ]; then
+            echo "Expected response field .ok=true, got .ok=${ok}"
+            exit 1
+          fi
