@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  import-check:
+  import-data:
     runs-on: ubuntu-latest
     steps:
       - name: Call import endpoint
