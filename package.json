@@ -1,0 +1,24 @@
+{
+  "name": "byrdocs-logs-exporter",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wrangler dev --remote",
+    "dev:local": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck"
+  },
+  "dependencies": {
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.46.0"
+  }
+}

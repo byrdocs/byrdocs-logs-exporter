@@ -1,32 +1,18 @@
-image: rust:latest
-
-variables:
-  CARGO_HOME: $CI_PROJECT_DIR/.cargo
-  CARGO_TARGET_DIR: $CI_PROJECT_DIR/target
+image: node:22
 
 stages:
-  - update
+  - check
 
-run_cargo_job:
-  stage: update
+typecheck:
+  stage: check
   cache:
     key:
       files:
-        - Cargo.lock
+        - package-lock.json
       prefix: ${CI_JOB_NAME}
     paths:
-      - $CARGO_TARGET_DIR/
-      - $CARGO_HOME/registry/index/
-      - $CARGO_HOME/registry/cache/
-      - $CARGO_HOME/git/db/
+      - node_modules/
     policy: pull-push
-
   script:
-    - mkdir -p $CARGO_HOME
-    - mkdir -p $CARGO_TARGET_DIR
-    - cargo run -- import
-
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_PIPELINE_SOURCE == "web"
-    - if: $CI_PIPELINE_SOURCE == "api"
+    - npm ci
+    - npm run typecheck

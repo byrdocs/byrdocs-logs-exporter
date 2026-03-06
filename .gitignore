@@ -1,5 +1,10 @@
 /target
+node_modules/
+.wrangler/
+dist/
+*.tsbuildinfo
 .env
+.dev.vars
 .DS_Store
 .cursor
 .secret

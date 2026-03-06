@@ -1,0 +1,17 @@
+name = "byrdocs-logs-exporter"
+main = "src/index.ts"
+compatibility_date = "2026-03-06"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["0 1 * * *"]
+
+[[r2_buckets]]
+binding = "ANALYTICS_BUCKET"
+bucket_name = "byrdocs-analytics"
+preview_bucket_name = "byrdocs-analytics"
+
+# Uncomment if you use Hyperdrive for PostgreSQL.
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "replace-with-your-hyperdrive-id"
