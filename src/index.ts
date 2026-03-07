@@ -4,7 +4,6 @@ const BATCH_SIZE = 100;
 const MAX_LIST_PAGES = 10;
 const DEFAULT_IMPORT_TIMEOUT_MS = 120_000;
 const DIAG_TIMEOUT_MS = 15_000;
-const DEFAULT_GITHUB_WORKFLOW_REF = "main";
 const IMPORT_TABLE = "_import";
 const IMPORTED_AT_COLUMN = "imported_at";
 const TIMESTAMP_COLUMN = "timestamp";
@@ -13,12 +12,12 @@ const PLAIN_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 interface Env {
   ANALYTICS_BUCKET: R2Bucket;
-  EXPORTER_SITE_TOKEN?: string;
+  EXPORTER_SITE_TOKEN: string;
   IMPORT_TIMEOUT_MS?: string;
-  GITHUB_REPOSITORY?: string;
-  GITHUB_WORKFLOW_DISPATCH_TOKEN?: string;
-  GITHUB_WORKFLOW_ID?: string;
-  GITHUB_WORKFLOW_REF?: string;
+  EXPORTER_REPOSITORY: string;
+  EXPORTER_WORKFLOW_DISPATCH_TOKEN: string;
+  EXPORTER_WORKFLOW_ID: string;
+  EXPORTER_WORKFLOW_REF?: string;
   LOGS_DB_URL?: string;
   LOGS_DB_SSLMODE?: string;
   LOGS_DB_HOST?: string;
@@ -296,7 +295,7 @@ function parseGithubRepository(repository: string): { owner: string; repo: strin
   const trimmed = repository.trim();
   const segments = trimmed.split("/").filter((segment) => segment.length > 0);
   if (segments.length !== 2) {
-    throw new Error("GITHUB_REPOSITORY must use the format owner/repo");
+    throw new Error("EXPORTER_REPOSITORY must use the format owner/repo");
   }
 
   return {
@@ -305,22 +304,17 @@ function parseGithubRepository(repository: string): { owner: string; repo: strin
   };
 }
 
-function resolveGithubWorkflowRef(ref: string | undefined): string {
-  const trimmed = ref?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_GITHUB_WORKFLOW_REF;
-}
-
 async function dispatchGithubWorkflow(
   env: Env,
   requestId: string
 ): Promise<{ repository: string; workflow: string; ref: string; status: number }> {
-  const repository = requireEnvValue(env.GITHUB_REPOSITORY, "GITHUB_REPOSITORY");
-  const workflowId = requireEnvValue(env.GITHUB_WORKFLOW_ID, "GITHUB_WORKFLOW_ID");
+  const repository = requireEnvValue(env.EXPORTER_REPOSITORY, "EXPORTER_REPOSITORY");
+  const workflowId = requireEnvValue(env.EXPORTER_WORKFLOW_ID, "EXPORTER_WORKFLOW_ID");
   const workflowToken = requireEnvValue(
-    env.GITHUB_WORKFLOW_DISPATCH_TOKEN,
-    "GITHUB_WORKFLOW_DISPATCH_TOKEN"
+    env.EXPORTER_WORKFLOW_DISPATCH_TOKEN,
+    "EXPORTER_WORKFLOW_DISPATCH_TOKEN"
   );
-  const ref = resolveGithubWorkflowRef(env.GITHUB_WORKFLOW_REF);
+  const ref = requireEnvValue(env.EXPORTER_WORKFLOW_REF,"EXPORTER_WORKFLOW_REF");
   const { owner, repo } = parseGithubRepository(repository);
 
   const response = await fetch(
