@@ -1,0 +1,7 @@
+LOGS_DB_URL=postgresql://user:passwd@host:port/byrdocs-logs
+EXPORTER_SITE_TOKEN=
+IMPORT_TIMEOUT_MS=120000
+EXPORTER_REPOSITORY=byrdocs/byrdocs-logs-exporter
+EXPORTER_WORKFLOW_DISPATCH_TOKEN=
+EXPORTER_WORKFLOW_ID=grafana-db-import-data.yaml
+EXPORTER_WORKFLOW_REF=main
