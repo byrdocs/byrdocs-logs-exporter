@@ -20,11 +20,6 @@ interface Env {
   EXPORTER_WORKFLOW_REF?: string;
   LOGS_DB_URL?: string;
   LOGS_DB_SSLMODE?: string;
-  LOGS_DB_HOST?: string;
-  LOGS_DB_PORT?: string;
-  LOGS_DB_USERNAME?: string;
-  LOGS_DB_PASSWORD?: string;
-  LOGS_DB_DATABASE?: string;
   HYPERDRIVE?: {
     connectionString?: string;
   };
@@ -650,16 +645,7 @@ function resolveConnectionString(env: Env): string {
     return applySslModeToConnectionString(env.LOGS_DB_URL, configuredSslMode);
   }
 
-  const host = requireEnvValue(env.LOGS_DB_HOST, "LOGS_DB_HOST");
-  const port = requireEnvValue(env.LOGS_DB_PORT, "LOGS_DB_PORT");
-  const username = requireEnvValue(env.LOGS_DB_USERNAME, "LOGS_DB_USERNAME");
-  const password = requireEnvValue(env.LOGS_DB_PASSWORD, "LOGS_DB_PASSWORD");
-  const database = requireEnvValue(env.LOGS_DB_DATABASE, "LOGS_DB_DATABASE");
-
-  const normalizedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-  const connectionUrl = new URL(`postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${normalizedHost}:${port}/${database}`);
-
-  return applySslModeToConnectionString(connectionUrl.toString(), configuredSslMode);
+  throw new HttpError(500, "Missing database configuration: set LOGS_DB_URL or HYPERDRIVE");
 }
 
 function requireEnvValue(value: string | undefined, name: string): string {
