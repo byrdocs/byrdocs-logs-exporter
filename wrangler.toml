@@ -12,6 +12,6 @@ bucket_name = "byrdocs-analytics"
 preview_bucket_name = "byrdocs-analytics"
 
 # Uncomment if you use Hyperdrive for PostgreSQL.
-# [[hyperdrive]]
-# binding = "HYPERDRIVE"
-# id = "replace-with-your-hyperdrive-id"
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "6573ef31307d4ac5a151ed18837e1939"
